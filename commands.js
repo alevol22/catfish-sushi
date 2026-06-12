@@ -2,23 +2,6 @@ import 'dotenv/config';
 import { fakeGameItems } from './game.js';
 import { InstallGlobalCommands } from './utils.js';
 
-// const WIKI_COMMAND = {
-//   name: 'wiki',
-//   type: 1,
-//   description: 'Lookup information in wiki',
-//   options: [
-//     {
-//       type: 3,
-//       name: 'item',
-//       description: 'Item to lookup',
-//       choices: fakeGameItems, //       choices: createCommandChoices(),
-//       required: true,
-//     },
-//   ],
-//   integration_types: [0],
-//   contexts: [0],
-// };
-
 // Leaderboard command
 const LEADERBOARD_COMMAND = {
   name: 'leaderboard',
@@ -37,11 +20,25 @@ const BACKLOG_LEADERBOARD_COMMAND = {
   contexts: [0],
 };
 
-// History command, need input parameters
+// History command, with input parameters
 const HISTORY_COMMAND = {
   name: 'history',
   type: 1,
   description: 'See history matching input parameters',
+  options: [
+    {
+      type: 3,
+      name: 'view',
+      description: 'What to show',
+      required: true,
+      choices: [
+        { name: 'my histogram', value: 'my_histogram' },
+        { name: 'my history', value: 'my_history' },
+        { name: 'union histogram', value: 'union_histogram' },
+        { name: 'union history', value: 'union_history' },
+      ],
+    },
+  ],
   integration_types: [0],
   contexts: [0],
 };

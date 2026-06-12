@@ -56,6 +56,11 @@ db.exec(`
     solo_point_count INTEGER NOT NULL DEFAULT 0,
     last_updated_game_day_id INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 const insertMessage = db.prepare(`
@@ -97,6 +102,18 @@ const markDirtyDay = db.prepare(`
   INSERT INTO dirty_days (game_day_id)
   VALUES (?)
   ON CONFLICT(game_day_id) DO NOTHING
+`);
+
+const getState = db.prepare(`
+  SELECT value
+  FROM app_state
+  WHERE key = ?
+`);
+
+const setState = db.prepare(`
+  INSERT INTO app_state (key, value)
+  VALUES (?, ?)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 
 const loadMessagesForDay = db.prepare(`
@@ -450,6 +467,14 @@ export function getPlayerScoresByTimeOfDay(userId, timezoneNameOrOffset) {
     }
 
     return distribution;
+}
+
+export function hasBackfillRun() {
+  return getState.get('channel_backfill_done')?.value === '1';
+}
+
+export function markBackfillRun() {
+  setState.run('channel_backfill_done', '1');
 }
 
 export default db;
