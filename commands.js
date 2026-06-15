@@ -78,19 +78,3 @@ const ALL_COMMANDS = [
 ];
 
 InstallGlobalCommands(process.env.APP_ID, ALL_COMMANDS);
-
-
-// // Get the game choices from game.js
-// function createCommandChoices() {
-//   const choices = getRPSChoices();
-//   const commandChoices = [];
-
-//   for (let choice of choices) {
-//     commandChoices.push({
-//       name: capitalize(choice),
-//       value: choice.toLowerCase(),
-//     });
-//   }
-
-//   return commandChoices;
-// }

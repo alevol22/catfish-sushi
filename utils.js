@@ -124,3 +124,110 @@ function getGameDayIdForDate(dateInput) {
 
   return ANCHOR_GAME_DAY_ID + diffDays;
 }
+
+export function formatAsciiTable(title, headers, rows, emptyMessage = 'No data yet.') {
+  if (!rows.length) {
+    return title ? `${title}\n${emptyMessage}` : emptyMessage;
+  }
+
+  const widths = headers.map((header, columnIndex) =>
+    Math.max(
+      header.length,
+      ...rows.map((row) => String(row[columnIndex]).length)
+    )
+  );
+
+  const border = `+${widths.map((width) => '-'.repeat(width + 2)).join('+')}+`;
+
+  const formatRow = (cells) =>
+    `| ${cells
+      .map((cell, columnIndex) => String(cell).padEnd(widths[columnIndex]))
+      .join(' | ')} |`;
+
+  return [
+    title,
+    border,
+    formatRow(headers),
+    border,
+    ...rows.map(formatRow),
+    border,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function formatDistribution(distribution) {
+  const entries = Object.entries(distribution)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([key, value]) => `${key}: ${value}`);
+
+  return entries.length ? entries.join(', ') : 'No data yet.';
+}
+
+export function formatAsciiHistogram(input, options = {}) {
+  const {
+    title = '',
+    barWidth = 24,
+    labelWidth = 4,
+    sortNumeric = true,
+    emptyMessage = 'No data yet.',
+  } = options;
+
+  const entries = Array.isArray(input) ? input : Object.entries(input);
+
+  if (!entries.length) {
+    return title ? `${title}\n${emptyMessage}` : emptyMessage;
+  }
+
+  const normalized = entries
+    .map(([label, value]) => [String(label), Number(value) || 0])
+    .sort((a, b) => {
+      if (!sortNumeric) return a[0].localeCompare(b[0]);
+      return Number(a[0]) - Number(b[0]);
+    });
+
+  const maxValue = Math.max(...normalized.map(([, value]) => value), 1);
+
+  const lines = normalized.map(([label, value]) => {
+    const filled = value === 0 ? 0 : Math.max(1, Math.round((value / maxValue) * barWidth));
+    const bar = '#'.repeat(filled);
+    return `${label.padStart(labelWidth)} | ${bar.padEnd(barWidth)} | ${value}`;
+  });
+
+  return [title, ...lines].filter(Boolean).join('\n');
+}
+
+function formatLeaderboard(rows) {
+  if (!rows.length) {
+    return 'No leaderboard data yet.';
+  }
+
+  const headers = ['Rank', 'Player', 'Total', 'Top', 'Solo'];
+
+  const data = rows.map((row, index) => [
+    String(index + 1),
+    row.username,
+    String(row.total_score_sum),
+    String(row.top_score_count),
+    String(row.solo_point_count),
+  ]);
+
+  const widths = headers.map((header, columnIndex) =>
+    Math.max(header.length, ...data.map((row) => row[columnIndex].length))
+  );
+
+  const border = `+${widths.map((width) => '-'.repeat(width + 2)).join('+')}+`;
+
+  const formatRow = (cells) =>
+    `| ${cells
+      .map((cell, columnIndex) => cell.padEnd(widths[columnIndex]))
+      .join(' | ')} |`;
+
+  return [
+    border,
+    formatRow(headers),
+    border,
+    ...data.map(formatRow),
+    border,
+  ].join('\n');
+}

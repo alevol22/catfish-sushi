@@ -10,6 +10,10 @@ import {
   DiscordRequest,
   parseGameMessage,
   getGameDayIdForDate,
+  formatAsciiTable,
+  formatDistribution,
+  formatAsciiHistogram,
+  formatLeaderboard,
 } from './utils.js';
 import {
   getLeaderboard,
@@ -23,11 +27,60 @@ import {
   hasBackfillRun,
   markBackfillRun,
 } from './database.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ verify: VerifyDiscordRequest(process.env.PUBLIC_KEY) }));
+
+export const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
+function formatLocalDay(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatGameDayId(date) {
+  return Number(date.toISOString().slice(0, 10).replaceAll('-', ''));
+}
+
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on('messageCreate', (message) => {
+  if (!TARGET_CHANNEL_ID) return;
+  if (message.channelId !== TARGET_CHANNEL_ID) return;
+  if (message.author.bot) return;
+  if (!message.content?.trim()) return;
+
+  const parsed = parseGameMessage(message.content);
+  if (!parsed) {
+    console.log(`Skipping message ${message.id}: not a valid game message`);
+    return;
+  }
+
+  saveMessage({
+    message_id: message.id,
+    user_id: message.author.id,
+    username: message.author.username,
+    score: parsed.score,
+    message_content: parsed.message_content,
+    message_timestamp_utc: message.createdAt.toISOString(),
+    game_day_id: formatGameDayId(message.createdAt),
+    local_day: formatLocalDay(message.createdAt),
+    timezone_name: null,
+    timezone_offset_minutes: null,
+  });
+});
+
+client.login(process.env.DISCORD_TOKEN);
 
 function getOption(options, name) {
   return options?.find((option) => option.name === name)?.value;
@@ -110,113 +163,6 @@ cron.schedule(
     timezone: 'America/New_York',
   }
 );
-
-function formatAsciiHistogram(input, options = {}) {
-  const {
-    title = '',
-    barWidth = 24,
-    labelWidth = 4,
-    sortNumeric = true,
-    emptyMessage = 'No data yet.',
-  } = options;
-
-  const entries = Array.isArray(input) ? input : Object.entries(input);
-
-  if (!entries.length) {
-    return title ? `${title}\n${emptyMessage}` : emptyMessage;
-  }
-
-  const normalized = entries
-    .map(([label, value]) => [String(label), Number(value) || 0])
-    .sort((a, b) => {
-      if (!sortNumeric) return a[0].localeCompare(b[0]);
-      return Number(a[0]) - Number(b[0]);
-    });
-
-  const maxValue = Math.max(...normalized.map(([, value]) => value), 1);
-
-  const lines = normalized.map(([label, value]) => {
-    const filled = value === 0 ? 0 : Math.max(1, Math.round((value / maxValue) * barWidth));
-    const bar = '#'.repeat(filled);
-    return `${label.padStart(labelWidth)} | ${bar.padEnd(barWidth)} | ${value}`;
-  });
-
-  return [title, ...lines].filter(Boolean).join('\n');
-}
-
-function formatLeaderboard(rows) {
-  if (!rows.length) {
-    return 'No leaderboard data yet.';
-  }
-
-  const headers = ['Rank', 'Player', 'Total', 'Top', 'Solo'];
-
-  const data = rows.map((row, index) => [
-    String(index + 1),
-    row.username,
-    String(row.total_score_sum),
-    String(row.top_score_count),
-    String(row.solo_point_count),
-  ]);
-
-  const widths = headers.map((header, columnIndex) =>
-    Math.max(header.length, ...data.map((row) => row[columnIndex].length))
-  );
-
-  const border = `+${widths.map((width) => '-'.repeat(width + 2)).join('+')}+`;
-
-  const formatRow = (cells) =>
-    `| ${cells
-      .map((cell, columnIndex) => cell.padEnd(widths[columnIndex]))
-      .join(' | ')} |`;
-
-  return [
-    border,
-    formatRow(headers),
-    border,
-    ...data.map(formatRow),
-    border,
-  ].join('\n');
-}
-
-function formatDistribution(distribution) {
-  const entries = Object.entries(distribution)
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([key, value]) => `${key}: ${value}`);
-
-  return entries.length ? entries.join(', ') : 'No data yet.';
-}
-
-function formatAsciiTable(title, headers, rows, emptyMessage = 'No data yet.') {
-  if (!rows.length) {
-    return title ? `${title}\n${emptyMessage}` : emptyMessage;
-  }
-
-  const widths = headers.map((header, columnIndex) =>
-    Math.max(
-      header.length,
-      ...rows.map((row) => String(row[columnIndex]).length)
-    )
-  );
-
-  const border = `+${widths.map((width) => '-'.repeat(width + 2)).join('+')}+`;
-
-  const formatRow = (cells) =>
-    `| ${cells
-      .map((cell, columnIndex) => String(cell).padEnd(widths[columnIndex]))
-      .join(' | ')} |`;
-
-  return [
-    title,
-    border,
-    formatRow(headers),
-    border,
-    ...rows.map(formatRow),
-    border,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
 
 function formatTimeOfDay(userId, distributionData) {
   const hours = Object.keys(distributionData.distribution)
@@ -310,7 +256,7 @@ app.post('/interactions', async function (req, res) {
 
     if (name === 'backlog') {
         const username = req.body.member.user.username;
-        if (username !== 'sashimi4878') {
+        if (username !== process.env.ADMIN_USERNAME) {
             return sendText(res, 'You are not allowed to run the backlog backfill.', true);
         }
 
