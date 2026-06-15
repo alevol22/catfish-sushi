@@ -11,11 +11,11 @@ const LEADERBOARD_COMMAND = {
   contexts: [0],
 };
 
-// Leaderboard backlog command
-const BACKLOG_LEADERBOARD_COMMAND = {
-  name: 'backlog-leaderboard',
+// Backlog command
+const BACKLOG_COMMAND = {
+  name: 'backlog',
   type: 1,
-  description: 'See leaderboard of all of our previous history',
+  description: 'Backfill historical messages',
   integration_types: [0],
   contexts: [0],
 };
@@ -57,13 +57,21 @@ const UNION_COMMAND = {
   name: 'union',
   type: 1,
   description: 'Automatic daily summary command',
+  options: [
+    {
+      type: 4,
+      name: 'game_day_id',
+      description: 'Game day for union to display',
+      required: true
+    },
+  ],
   integration_types: [0],
   contexts: [0],
 };
 
 const ALL_COMMANDS = [
   LEADERBOARD_COMMAND,
-  BACKLOG_LEADERBOARD_COMMAND,
+  BACKLOG_COMMAND,
   HISTORY_COMMAND,
   TIME_COMMAND,
   UNION_COMMAND,

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cron from 'node-cron';
 import {
   InteractionResponseType,
   InteractionType,
@@ -8,6 +9,7 @@ import {
   VerifyDiscordRequest,
   DiscordRequest,
   parseGameMessage,
+  getGameDayIdForDate,
 } from './utils.js';
 import {
   getLeaderboard,
@@ -31,12 +33,12 @@ function getOption(options, name) {
   return options?.find((option) => option.name === name)?.value;
 }
 
-async function fetchAllChannelMessages(channelId) {
+async function fetchAllChannelMessages() {
   const allMessages = [];
   let before;
 
   while (true) {
-    const endpoint = `channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ''}`;
+    const endpoint = `channels/${process.env.TARGET_CHANNEL_ID}/messages?limit=100${before ? `&before=${before}` : ''}`;
     const response = await DiscordRequest(endpoint, { method: 'GET' });
     const page = await response.json();
 
@@ -51,8 +53,8 @@ async function fetchAllChannelMessages(channelId) {
   return allMessages;
 }
 
-async function runBackfill(channelId) {
-  const messages = await fetchAllChannelMessages(channelId);
+async function runBackfill() {
+  const messages = await fetchAllChannelMessages();
 
   for (const message of messages.reverse()) {
     if (message.author?.bot) continue;
@@ -75,6 +77,39 @@ async function runBackfill(channelId) {
     });
   }
 }
+
+function getLatestUnionSummaryMessage(gameDay) {
+  const summary = returnDailyUnion(gameDay);
+  return formatUnionSummary(latestDayId, summary);
+}
+
+async function postDailyUnionSummary() {
+  const latestDayId = getGameDayIdForDate(new Date());
+  const content = await getLatestUnionSummaryMessage(latestDayId);
+  if (!content) return;
+
+  await DiscordRequest(`channels/${process.env.TARGET_CHANNEL_ID}/messages`, {
+    method: 'POST',
+    body: {
+      content,
+      allowed_mentions: { parse: [] },
+    },
+  });
+}
+
+cron.schedule(
+  '59 23 * * *',
+  async () => {
+    try {
+      await postDailyUnionSummary();
+    } catch (error) {
+      console.error('Failed to post daily union summary:', error);
+    }
+  },
+  {
+    timezone: 'America/New_York',
+  }
+);
 
 function formatAsciiHistogram(input, options = {}) {
   const {
@@ -273,14 +308,14 @@ app.post('/interactions', async function (req, res) {
       return sendText(res, formatLeaderboard(rows));
     }
 
-    if (name === 'backlog-leaderboard') {
-        const username = req.body.member?.user?.username ?? req.body.user?.username;
+    if (name === 'backlog') {
+        const username = req.body.member.user.username;
         if (username !== 'sashimi4878') {
             return sendText(res, 'You are not allowed to run the backlog backfill.', true);
         }
 
         if (!hasBackfillRun()) {
-            await runBackfill(process.env.TARGET_CHANNEL_ID);
+            await runBackfill();
             markBackfillRun();
         }
 
@@ -289,7 +324,7 @@ app.post('/interactions', async function (req, res) {
 
     if (name === 'history') {
       const view = getOption(options, 'view');
-      const userId = getOption(options, 'user') ?? req.body.member?.user?.id ?? req.body.user?.id;
+      const userId = req.body.member.user.id;
       
       if (!view) {
           return sendText(res, 'Missing view option for history.', true);
@@ -335,7 +370,7 @@ app.post('/interactions', async function (req, res) {
         const history = getUnionScoreHistory();
 
         if (!history.length) {
-            return sendText(res, 'No union history yet.');
+            return sendText(res, 'No union history yet.', true);
         }
 
         const tableRows = history.map((row) => {
@@ -377,7 +412,7 @@ app.post('/interactions', async function (req, res) {
     }
 
     if (name === 'time') {
-      const userId = getOption(options, 'user') ?? req.body.member?.user?.id ?? req.body.user?.id;
+      const userId = req.body.member.user.id;
       if (!userId) {
         return sendText(res, 'Missing user option for time.', true);
       }
@@ -392,22 +427,13 @@ app.post('/interactions', async function (req, res) {
     }
 
     if (name === 'union') {
-    //   const gameDayIdOption = getOption(options, 'game_day_id');
+        const gameDayIdOption = Number(getOption(options, 'game_day_id'));
+        const content = await getLatestUnionSummaryMessage(gameDayIdOption);
+        if (!content) {
+            return sendText(res, 'No union summaries exist yet.', true);
+        }
 
-    //   if (gameDayIdOption !== undefined && gameDayIdOption !== null) {
-    //     const gameDayId = Number(gameDayIdOption);
-    //     const summary = returnDailyUnion(gameDayId);
-    //     return sendText(res, formatUnionSummary(gameDayId, summary));
-    //   }
-
-      const history = getUnionScoreHistory();
-      if (!history.length) {
-        return sendText(res, 'No union summaries exist yet.');
-      }
-
-      const latestDayId = history[0].game_day_id;
-      const summary = returnDailyUnion(latestDayId);
-      return sendText(res, formatUnionSummary(latestDayId, summary));
+        return sendText(res, content);
     }
 
     return sendText(res, `Unknown command: ${name}`, true);

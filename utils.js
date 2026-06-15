@@ -2,6 +2,9 @@ import 'dotenv/config';
 import { verifyKey } from 'discord-interactions';
 import { getFakeUsername } from './game.js';
 
+const ANCHOR_GAME_DAY_ID = 640;
+const ANCHOR_DATE_UTC = new Date('2026-03-25T00:00:00.000Z');
+
 export function VerifyDiscordRequest(clientKey) {
   return function (req, res, buf) {
     const signature = req.get('X-Signature-Ed25519');
@@ -103,4 +106,21 @@ export function parseGameMessage(content) {
     score,
     message_content: JSON.stringify([...row1, ...row2]),
   };
+}
+
+function getGameDayIdForDate(dateInput) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const diffDays = Math.floor((Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate()
+  ) - Date.UTC(
+    ANCHOR_DATE_UTC.getUTCFullYear(),
+    ANCHOR_DATE_UTC.getUTCMonth(),
+    ANCHOR_DATE_UTC.getUTCDate()
+  )) / msPerDay);
+
+  return ANCHOR_GAME_DAY_ID + diffDays;
 }
