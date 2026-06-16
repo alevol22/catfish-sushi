@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { verifyKey } from 'discord-interactions';
-import { getFakeUsername } from './game.js';
 
 const ANCHOR_GAME_DAY_ID = 640;
 const ANCHOR_DATE_UTC = new Date('2026-03-25T00:00:00.000Z');
