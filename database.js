@@ -172,17 +172,15 @@ export function computeDailySummary(game_day_id) {
   for (const row of rows) {
     scores.push(row.score);
     uniquePlayers.add(row.user_id);
-    results.push(row.message_content);
+    const removing_brackets = row.message_content.substring(1, row.message_content.length - 1);
+    results.push(removing_brackets);
   }
-
-  console.log(`Res array ${results}`);
 
     for (let i = 0; i < 10; i++) {
         let maxAtIndex = 0;
         let nonZeroCount = [];
         for (const [j, result] of results.entries()) {
             const value = parseFloat(result.split(',')[i].trim()) || 0;
-            console.log(`Value at index ${i} for result ${j}: ${value}`);
             if (value > maxAtIndex) {
                 maxAtIndex = value;
             }

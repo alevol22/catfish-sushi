@@ -211,7 +211,7 @@ export function formatAsciiHistogram(input, options = {}) {
   });
 
   // 2. Add the dynamic visual anchor legend showing both scale and max width
-  lines.push(`\nLegend: # = ~${formattedValuePerHash} (Max bar width: ${barWidth} chars)`);
+  lines.push(`\nLegend: # = ~${formattedValuePerHash} (Max bar size: ${barWidth} #s)`);
 
   return [
     MONOSPACE_START,
@@ -228,7 +228,7 @@ export function formatLeaderboard(rows) {
     return 'No leaderboard data yet.';
   }
 
-  const headers = ['Rank', 'Player', 'Total', 'Top', 'Solo'];
+  const headers = ['Rank', 'Player', 'Total', 'Days 1st', 'Whales'];
 
   const data = rows.map((row, index) => [
     String(index + 1),
