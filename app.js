@@ -31,6 +31,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
 
 app.use(express.json({ verify: VerifyDiscordRequest(process.env.PUBLIC_KEY) }));
 
@@ -44,10 +45,6 @@ export const client = new Client({
 
 function formatLocalDay(date) {
   return date.toISOString().slice(0, 10);
-}
-
-function formatGameDayId(date) {
-  return Number(date.toISOString().slice(0, 10).replaceAll('-', ''));
 }
 
 client.once('ready', () => {
@@ -73,8 +70,7 @@ client.on('messageCreate', (message) => {
     score: parsed.score,
     message_content: parsed.message_content,
     message_timestamp_utc: message.createdAt.toISOString(),
-    game_day_id: formatGameDayId(message.createdAt),
-    local_day: formatLocalDay(message.createdAt),
+    game_day_id: parsed.game_day_id,
     timezone_name: null,
     timezone_offset_minutes: null,
   });
@@ -91,7 +87,7 @@ async function fetchAllChannelMessages() {
   let before;
 
   while (true) {
-    const endpoint = `channels/${process.env.TARGET_CHANNEL_ID}/messages?limit=100${before ? `&before=${before}` : ''}`;
+    const endpoint = `channels/${TARGET_CHANNEL_ID}/messages?limit=100${before ? `&before=${before}` : ''}`;
     const response = await DiscordRequest(endpoint, { method: 'GET' });
     const page = await response.json();
 
@@ -124,7 +120,6 @@ async function runBackfill() {
       message_content: parsed.message_content,
       message_timestamp_utc: message.created_at ?? message.timestamp ?? new Date(message.createdAt ?? Date.now()).toISOString(),
       game_day_id: parsed.game_day_id,
-      local_day: new Date(message.timestamp ?? message.created_at ?? Date.now()).toISOString().slice(0, 10),
       timezone_name: null,
       timezone_offset_minutes: null,
     });
@@ -133,7 +128,8 @@ async function runBackfill() {
 
 function getLatestUnionSummaryMessage(gameDay) {
   const summary = returnDailyUnion(gameDay);
-  return formatUnionSummary(latestDayId, summary);
+  console.log(`Fetched union summary for day ${gameDay}:`, summary);
+  return formatUnionSummary(gameDay, summary);
 }
 
 async function postDailyUnionSummary() {
@@ -141,7 +137,7 @@ async function postDailyUnionSummary() {
   const content = await getLatestUnionSummaryMessage(latestDayId);
   if (!content) return;
 
-  await DiscordRequest(`channels/${process.env.TARGET_CHANNEL_ID}/messages`, {
+  await DiscordRequest(`channels/${TARGET_CHANNEL_ID}/messages`, {
     method: 'POST',
     body: {
       content,
@@ -184,18 +180,14 @@ function formatTimeOfDay(userId, distributionData) {
   ]);
 
   const averageHistogram = formatAsciiHistogram(distributionData.averages, {
-    title: 'Averages',
+    title: '=== Average Score at Time ===',
     barWidth: 20,
-    labelWidth: 2,
   });
 
   return [
-    `## Time of day for <@${userId}>`,
-    '',
-    formatAsciiTable('Sums', ['Hour', 'Sum'], sumRows),
-    '',
-    formatAsciiTable('Frequencies', ['Hour', 'Count'], frequencyRows),
-    '',
+    `## Results w.r.t. time of day for <@${userId}>`,
+    formatAsciiTable('Total points earned', ['Hour', 'Points'], sumRows),
+    formatAsciiTable('Frequency of submission at time', ['Hour', 'Count'], frequencyRows),
     averageHistogram,
   ].join('\n');
 }
@@ -205,17 +197,21 @@ function formatUnionSummary(gameDayId, summary) {
     return `No union summary found for day ${gameDayId}.`;
   }
 
-  const unionEmoji = summary.union.map((value) => (value > 0 ? '🍣' : '🪝')).join('');
+  const unionEmoji = summary.union
+    .map((value) => (value > 0 ? '🍣' : '🪝'))
+    .join('')
+    .replace(/(\p{Any}{5})/u, '$1\n'); // Adds a newline after the 5th emoji
 
   const detailedEmoji = summary.detailed
     .map((value) => {
-      if (value === 0) return '🪝';
-      if (value === 1) return '🦦';
-      if (value === 2) return '🐙';
-      if (value === 3) return '🦐';
-      return '❓';
+        if (value === 0) return '🪝';
+        if (value === 1) return '🐳';
+        if (value === 2) return '🐙';
+        if (value === 3) return '🦐';
+        return '❓';
     })
-    .join('');
+    .join('')
+    .replace(/(\p{Any}{5})/u, '$1\n'); // Adds a newline after the 5th emoji
 
   return [
     'catfish-sushi',
@@ -291,7 +287,7 @@ app.post('/interactions', async function (req, res) {
             [
             `## My history for <@${userId}>`,
             '',
-            formatAsciiTable('History', ['Day', 'Score'], tableRows),
+            formatAsciiTable('', ['Day', 'Score'], tableRows),
             ].join('\n')
         );
     }
@@ -304,9 +300,8 @@ app.post('/interactions', async function (req, res) {
             `## Score histogram for <@${userId}>`,
             '',
             formatAsciiHistogram(distribution, {
-            title: 'Scores',
+            title: '=== Score Distribution ===',
             barWidth: 20,
-            labelWidth: 4,
             }),
         ].join('\n')
         );
@@ -320,11 +315,10 @@ app.post('/interactions', async function (req, res) {
         }
 
         const tableRows = history.map((row) => {
-            const summary = JSON.parse(row.union_scores_json);
             return [
             row.game_day_id,
-            summary.union_score,
-            summary.users.length,
+            row.union_score,
+            row.players
             ];
         });
 
@@ -346,9 +340,8 @@ app.post('/interactions', async function (req, res) {
             '## Union histogram',
             '',
             formatAsciiHistogram(distribution, {
-            title: 'Union scores',
+            title: '=== Union Score Distribution ===',
             barWidth: 20,
-            labelWidth: 4,
             }),
         ].join('\n')
         );
@@ -366,7 +359,6 @@ app.post('/interactions', async function (req, res) {
       const timezoneOffsetMinutes = getOption(options, 'timezone_offset_minutes');
       const payload = getPlayerScoresByTimeOfDay(
         userId,
-        timezoneOffsetMinutes !== undefined ? String(timezoneOffsetMinutes) : undefined
       );
 
       return sendText(res, formatTimeOfDay(userId, payload));

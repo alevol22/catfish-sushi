@@ -4,6 +4,9 @@ import { verifyKey } from 'discord-interactions';
 const ANCHOR_GAME_DAY_ID = 640;
 const ANCHOR_DATE_UTC = new Date('2026-03-25T00:00:00.000Z');
 
+const MONOSPACE_START = '```text';
+const MONOSPACE_END = '```';
+
 export function VerifyDiscordRequest(clientKey) {
   return function (req, res, buf) {
     const signature = req.get('X-Signature-Ed25519');
@@ -88,7 +91,7 @@ export function parseGameMessage(content) {
   if (lines.length < 4) return null;
   if (lines[0].trim() !== 'catfishing.net') return null;
 
-  const headerMatch = lines[1].trim().match(/^#(\d+)\s*-\s*(\d+)\/10$/);
+  const headerMatch = lines[1].trim().match(/^#(\d+)\s*-\s*(\d+(?:\.\d+)?)\/10$/);
   if (!headerMatch) return null;
 
   const gameDayId = Number(headerMatch[1]);
@@ -144,12 +147,12 @@ export function formatAsciiTable(title, headers, rows, emptyMessage = 'No data y
       .join(' | ')} |`;
 
   return [
+    MONOSPACE_START,
     title,
-    border,
     formatRow(headers),
     border,
     ...rows.map(formatRow),
-    border,
+    MONOSPACE_END,
   ]
     .filter(Boolean)
     .join('\n');
@@ -167,7 +170,7 @@ export function formatAsciiHistogram(input, options = {}) {
   const {
     title = '',
     barWidth = 24,
-    labelWidth = 4,
+    labelWidth = 'Value'.length,
     sortNumeric = true,
     emptyMessage = 'No data yet.',
   } = options;
@@ -187,14 +190,38 @@ export function formatAsciiHistogram(input, options = {}) {
 
   const maxValue = Math.max(...normalized.map(([, value]) => value), 1);
 
+  // 1. Calculate how much value a single '#' represents
+  const valuePerHash = maxValue / barWidth;
+  const formattedValuePerHash = valuePerHash % 1 === 0 ? valuePerHash : valuePerHash.toFixed(1);
+
+  const header = `${'Value'.padStart(labelWidth)} | Frequency`;
+
   const lines = normalized.map(([label, value]) => {
     const filled = value === 0 ? 0 : Math.max(1, Math.round((value / maxValue) * barWidth));
     const bar = '#'.repeat(filled);
-    return `${label.padStart(labelWidth)} | ${bar.padEnd(barWidth)} | ${value}`;
+    
+    // 1. Check if the value is a decimal. If so, round to 3 decimal places.
+    const formattedValue = Number.isInteger(value) ? value : Number(value.toFixed(3));
+    
+    // 2. Append the formatted value in parentheses
+    const barWithCount = `${bar} (${formattedValue})`.trim();
+    
+    // Pad the combined string to keep the layout grid intact
+    return `${label.padStart(labelWidth)} | ${barWithCount}`;
   });
 
-  return [title, ...lines].filter(Boolean).join('\n');
+  // 2. Add the dynamic visual anchor legend showing both scale and max width
+  lines.push(`\nLegend: # = ~${formattedValuePerHash} (Max bar width: ${barWidth} chars)`);
+
+  return [
+    MONOSPACE_START,
+    title,
+    header,
+    ...lines,
+    MONOSPACE_END,
+  ].filter(Boolean).join('\n');
 }
+
 
 export function formatLeaderboard(rows) {
   if (!rows.length) {
@@ -223,10 +250,12 @@ export function formatLeaderboard(rows) {
       .join(' | ')} |`;
 
   return [
+    MONOSPACE_START,
     border,
     formatRow(headers),
     border,
     ...data.map(formatRow),
     border,
+    MONOSPACE_END,
   ].join('\n');
 }

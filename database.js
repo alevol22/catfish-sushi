@@ -15,15 +15,11 @@ db.exec(`
     message_content TEXT NOT NULL,
     message_timestamp_utc TEXT NOT NULL,
     game_day_id INTEGER NOT NULL,
-    local_day TEXT NOT NULL,
     timezone_name TEXT,
     timezone_offset_minutes INTEGER
   );
 
-  CREATE INDEX IF NOT EXISTS idx_messages_day
-    ON messages(game_day_id, local_day);
-
-  CREATE INDEX IF NOT EXISTS idx_messages_user_day
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_user_day
     ON messages(user_id, game_day_id);
 
   CREATE TABLE IF NOT EXISTS daily_summaries (
@@ -72,7 +68,6 @@ const insertMessage = db.prepare(`
     message_content,
     message_timestamp_utc,
     game_day_id,
-    local_day,
     timezone_name,
     timezone_offset_minutes
   ) VALUES (
@@ -83,19 +78,10 @@ const insertMessage = db.prepare(`
     @message_content,
     @message_timestamp_utc,
     @game_day_id,
-    @local_day,
     @timezone_name,
     @timezone_offset_minutes
   )
-  ON CONFLICT(message_id) DO UPDATE SET
-    username = excluded.username,
-    score = excluded.score,
-    message_content = excluded.message_content,
-    message_timestamp_utc = excluded.message_timestamp_utc,
-    game_day_id = excluded.game_day_id,
-    local_day = excluded.local_day,
-    timezone_name = excluded.timezone_name,
-    timezone_offset_minutes = excluded.timezone_offset_minutes
+  ON CONFLICT DO NOTHING;
 `);
 
 const markDirtyDay = db.prepare(`
@@ -165,8 +151,10 @@ const upsertPlayerDayStats = db.prepare(`
 // might need to mod to accept many messages
 export function saveMessage(message) {
   const tx = db.transaction(() => {
-    insertMessage.run(message);
-    markDirtyDay.run(message.game_day_id);
+    const result = insertMessage.run(message);
+    if (result.changes > 0) {
+        markDirtyDay.run(message.game_day_id);
+    }
   });
 
   tx();
@@ -187,11 +175,14 @@ export function computeDailySummary(game_day_id) {
     results.push(row.message_content);
   }
 
+  console.log(`Res array ${results}`);
+
     for (let i = 0; i < 10; i++) {
         let maxAtIndex = 0;
         let nonZeroCount = [];
         for (const [j, result] of results.entries()) {
-            const value = parseFloat(result.split(',')[i]);
+            const value = parseFloat(result.split(',')[i].trim()) || 0;
+            console.log(`Value at index ${i} for result ${j}: ${value}`);
             if (value > maxAtIndex) {
                 maxAtIndex = value;
             }
@@ -202,7 +193,7 @@ export function computeDailySummary(game_day_id) {
         }
         union.push(maxAtIndex);
         // Determine the detailed category based on nonZeroCount
-        if (nonZeroCount.length === 0) {
+        if (maxAtIndex === 0) {
             detailed[i] = 0;
         } else if (nonZeroCount.length === 1) {
             detailed[i] = 1;
@@ -399,10 +390,11 @@ export function getUnionScoreHistory() {
     `).all();
 
     for (const row of historyRows) {
-        row.union_scores_json = JSON.parse(row.union_scores_json).union_score;
+        row.union_score = JSON.parse(row.union_scores_json).union_score;
+        row.players = JSON.parse(row.union_scores_json).users.length;
     }
 
-    return historyRows; // yes, I know this doesn't return JSON, that's intentional
+    return historyRows;
 }
 
 export function getUnionScoreDistribution() {
@@ -410,7 +402,7 @@ export function getUnionScoreDistribution() {
     const distribution = {};
 
     for (const row of history) {
-        const score = row.union_scores_json;
+        const score = row.union_score;
         if (distribution[score]) {
             distribution[score]++;
         } else {
@@ -421,7 +413,7 @@ export function getUnionScoreDistribution() {
     return distribution;
 }
 
-export function getPlayerScoresByTimeOfDay(userId, timezoneNameOrOffset) {
+export function getPlayerScoresByTimeOfDay(userId) {
     const data = db.prepare(`
         SELECT
             score,
@@ -441,16 +433,26 @@ export function getPlayerScoresByTimeOfDay(userId, timezoneNameOrOffset) {
 
     for (const row of data) {
         let date = new Date(row.message_timestamp_utc);
-        if (timezoneNameOrOffset) {
-            // if input is a number, treat it as a timezone offset in minutes
-            if (!isNaN(timezoneNameOrOffset)) {
-                date = new Date(date.getTime() + parseInt(timezoneNameOrOffset) * 60000);
-            } else {
-                // otherwise, treat it as a timezone name and convert using the row's stored timezone offset
-                date = new Date(date.getTime() + row.timezone_offset_minutes * 60000);
-            }
-        }
-        const hour = date.getUTCHours();
+        // if (timezoneNameOrOffset) {
+        //     // if input is a number, treat it as a timezone offset in minutes
+        //     if (!isNaN(timezoneOffset)) {
+        //         date = new Date(date.getTime() + parseInt(timezoneNameOrOffset) * 60000);
+        //     } else {
+        //         // otherwise, treat it as a timezone name and convert using the row's stored timezone offset
+        //         date = new Date(date.getTime() + row.timezone_offset_minutes * 60000);
+        //     }
+        //     const hour = date.getUTCHours();
+        // }
+        // else {
+            // convert UTC to EST/EDT
+            const hour = Number(
+                date.toLocaleTimeString('en-US', { 
+                    timeZone: 'America/New_York', 
+                    hour: '2-digit', 
+                    hour12: false 
+                })
+                );
+        // }
         if (distribution.distribution[hour]) {
             distribution.distribution[hour].push(row.score);
             distribution.sums[hour] += row.score;
