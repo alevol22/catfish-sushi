@@ -80,7 +80,7 @@ client.on('messageCreate', (message) => {
   });
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.BOT_TOKEN);
 
 function getOption(options, name) {
   return options?.find((option) => option.name === name)?.value;
