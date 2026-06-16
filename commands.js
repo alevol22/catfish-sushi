@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { fakeGameItems } from './game.js';
 import { InstallGlobalCommands } from './utils.js';
 
 // Leaderboard command
