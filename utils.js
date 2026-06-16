@@ -107,7 +107,7 @@ export function parseGameMessage(content) {
   };
 }
 
-function getGameDayIdForDate(dateInput) {
+export function getGameDayIdForDate(dateInput) {
   const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
 
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -196,7 +196,7 @@ export function formatAsciiHistogram(input, options = {}) {
   return [title, ...lines].filter(Boolean).join('\n');
 }
 
-function formatLeaderboard(rows) {
+export function formatLeaderboard(rows) {
   if (!rows.length) {
     return 'No leaderboard data yet.';
   }
