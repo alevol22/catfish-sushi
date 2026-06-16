@@ -78,6 +78,8 @@ client.on('messageCreate', (message) => {
 
 client.login(process.env.BOT_TOKEN);
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function getOption(options, name) {
   return options?.find((option) => option.name === name)?.value;
 }
@@ -97,6 +99,7 @@ async function fetchAllChannelMessages() {
     before = page[page.length - 1].id;
 
     if (page.length < 100) break;
+    await sleep(200);
   }
 
   return allMessages;
@@ -128,7 +131,6 @@ async function runBackfill() {
 
 function getLatestUnionSummaryMessage(gameDay) {
   const summary = returnDailyUnion(gameDay);
-  console.log(`Fetched union summary for day ${gameDay}:`, summary);
   return formatUnionSummary(gameDay, summary);
 }
 
@@ -256,12 +258,23 @@ app.post('/interactions', async function (req, res) {
             return sendText(res, 'You are not allowed to run the backlog backfill.', true);
         }
 
+        const content = 'Backfill is starting. This may take a while...';
+        res.send({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+            content,
+            flags: 64,
+            allowed_mentions: { parse: [] },
+            },
+        });
+
         if (!hasBackfillRun()) {
             await runBackfill();
             markBackfillRun();
         }
 
-        return sendText(res, "Backfill completed successfully.");
+        console.log("Backfill successfully finished!");
+        return;
     }
 
     if (name === 'history') {

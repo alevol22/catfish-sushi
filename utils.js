@@ -7,6 +7,8 @@ const ANCHOR_DATE_UTC = new Date('2026-03-25T00:00:00.000Z');
 const MONOSPACE_START = '```text';
 const MONOSPACE_END = '```';
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function VerifyDiscordRequest(clientKey) {
   return function (req, res, buf) {
     const signature = req.get('X-Signature-Ed25519');
@@ -35,6 +37,16 @@ export async function DiscordRequest(endpoint, options) {
     },
     ...options,
   });
+
+  // Handle Rate Limits dynamically
+  if (res.status === 429) {
+    const data = await res.json();
+    const waitTime = (data.retry_after * 1000) + 100; // Convert to ms and add a safe 100ms buffer
+    console.warn(`Rate limited. Sleeping for ${waitTime}ms...`);
+    await sleep(waitTime);
+    return DiscordRequest(endpoint, options); // Retry the exact same request
+  }
+
   // throw API errors
   if (!res.ok) {
     const data = await res.json();
